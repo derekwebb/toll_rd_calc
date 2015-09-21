@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>GMap Toll Road Calculator POC</title>
+    <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <script type="text/javascript" src="//maps.google.com/maps/api/js?sensor=true"></script>
+    <script type="text/javascript" src="/tollroad_libs/gmaps/gmaps.js"></script>
+    <script type="text/javascript">
+      var map;
+      $(document).ready(function(){
+        map = new GMaps({
+          div: '#map',
+          lat: 38.945898, 
+          lng: -77.316963,
+          zoom: 12
+        });
+        map.drawRoute({
+          origin: [38.932614, -77.213347],
+          destination: [38.962619, -77.423124],
+          travelMode: 'driving',
+          strokeColor: '#a61aad',
+          strokeOpacity: 0.75,
+          strokeWeight: 8
+        });
+      });
+    </script>
+    <style type="text/css">
+      #map,
+      #panorama {
+        height:500px;
+        width: 700px;
+        background:#6699cc;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>GMaps Toll Road Calculator POC</h1>
+    <div class="map" id="map"></div>
+  </body>
+</html>
