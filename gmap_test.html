@@ -55,18 +55,19 @@
     </div>
     <script type="text/javascript">
       var toll_calc = {
-        settings: {  // -- Useful items to keep track of for the rest of the app
-          step:  0,  // help determine if we are working on start or end point
-          start: {}, // Starting point for the users selected route
-          end:   {}, // Ending point for the users selected route
-          directionsService: {},
+        settings: { // ---> Useful items to keep track of for the rest of the app
+          step:  0,       // help determine if we are working on start or end point
+          start: {},      // Starting point for the users selected route
+          end:   {},      // Ending point for the users selected route
+          directionsService: {}, // service to get directions from (google obj)
           directionsDisplay: {}, // (to ensure zoom is respected) preserveViewport: true
-          mapOptions: {},
-          map: {},
-          center: {},
-          markers: {},
-          orig_start: {},
-          orig_end: {}
+          mapOptions: {}, // map options (obviously)
+          map: {},        // google map obj
+          center: {},     // center point of the map
+          markers: {},    // A list of markers
+          orig_start: {}, // original start point
+          orig_end: {},   // original end point
+          heading: ''     // keep track of the heading the user has selected (east / west)
         },
         
         initialize: function() {
@@ -74,8 +75,8 @@
           this.settings.mapOptions = {
             center: this.settings.center,
             zoom: 12,
-            //minZoom: 12,
-            //maxZoom: 15
+            minZoom: 12,
+            maxZoom: 14
           };
           this.settings.map = new google.maps.Map(document.getElementById("map"), this.settings.mapOptions);
           this.settings.directionsService = new google.maps.DirectionsService;
@@ -89,15 +90,8 @@
             },
             preserveViewport: true
           }); // (to ensure zoom is respected) preserveViewport: true
-          /*this.settings.mapOptions = {
-            center: this.settings.center,
-            zoom: 12,
-            minZoom: 12,
-            maxZoom: 15
-          };
-          this.settings.map = new google.maps.Map(document.getElementById("map"), this.settings.mapOptions);*/
-          this.settings.directionsDisplay.setMap(this.settings.map);
           
+          this.settings.directionsDisplay.setMap(this.settings.map);
           this.calcRoute(); // calculate default route
 
           // Uncomment to show traffic layer
@@ -115,17 +109,30 @@
         },
         
         // Set up the route.
-        calcRoute: function() {
+        calcRoute: function(reset) {
+          var reset = (reset) ? reset : false;
+          // Start at the west side
+          var start = this.settings.orig_start = new google.maps.LatLng(38.966176, -77.430888); // cont to Dulles Greenway
+          var end   = this.settings.orig_end   = new google.maps.LatLng(38.931673, -77.212148); // cont. to 267
           
-          var start = this.settings.orig_start = new google.maps.LatLng(38.933463, -77.212364);
-          var end   = this.settings.orig_end   = new google.maps.LatLng(38.966072, -77.430008);
-          
-          // Get start position
+          // Get start position - mind the reset
           if (this.settings.start.hasOwnProperty('position') &&
-              this.settings.end.hasOwnProperty('position')) {
-            this.settings.directionsDisplay.setDirections({routes: []});
-            start = new google.maps.LatLng(this.settings.start.position.H, this.settings.start.position.L);
-            end   = new google.maps.LatLng(this.settings.end.position.H, this.settings.end.position.L);
+              this.settings.end.hasOwnProperty('position') && !reset) {
+            
+            if (this.settings.start.labelNo > this.settings.end.labelNo) { // east bound
+              this.settings.heading = 'east';
+              // The route maps fine this way :)
+              start = new google.maps.LatLng(this.settings.start.position.H, this.settings.start.position.L);
+              end   = new google.maps.LatLng(this.settings.end.position.H, this.settings.end.position.L);
+            }
+            else { // west bound
+              this.settings.heading = 'west';
+              // When headed west, the directions need to be reversed to keep the route on the right path
+              //  If and when we handle the east and west bound traffic differently (adding new route markers etc.) this 
+              //  can be updated (and or removed)
+              end   = new google.maps.LatLng(this.settings.start.position.H, this.settings.start.position.L); // note the start is sent into end 
+              start = new google.maps.LatLng(this.settings.end.position.H, this.settings.end.position.L);     //  and vs. versus.
+            }
           }
           var request = {
             origin: start,
@@ -135,10 +142,6 @@
           var toll_calc = this;
 
           this.settings.directionsService.route(request, function(result, status) {
-            console.log('Setting directions');
-            console.log(start);
-            console.log(end);
-            console.log(result);
             if (status == google.maps.DirectionsStatus.OK) {
               toll_calc.settings.directionsDisplay.setDirections(result);
             }
@@ -156,30 +159,63 @@
           for (var i in markers) {
             // Handle click of marker
             google.maps.event.addListener(markers[i], "click", function (e) {
-              if (!(toll_calc.settings.step % 2)) { // starting point
-                $('#map-info .exit span').text('');
-                $('#map-info .start span').text(this.labelContent);
-                toll_calc.settings.step++;
-                toll_calc.settings.start = this; // we need to remember the start for calcRoute later
-              } 
-              else { // exit point
-                if (this.labelContent != $('#map-info .start span').text()) {
-                  $('#map-info .exit span').text(this.labelContent);
+              if (this.labelID != 'markerMain') {     // no changes on click of marker main - you can't exit at main toll plaza
+                if (!(toll_calc.settings.step % 2)) { // starting point
+                  $('#map-info .exit span').text('');
+                  $('#map-info .start span').text(this.labelContent);
+                  toll_calc.resetMarkers();
                   toll_calc.settings.step++;
-                  toll_calc.settings.end = this; // we need to remember the end for calcRoute later
-                  toll_calc.calcRoute();         // calculate new route path
+                  toll_calc.settings.start = this; // we need to remember the start for calcRoute later
+                } 
+                else { // exit point
+                  if (this.labelContent != $('#map-info .start span').text()) { // @TODO find a cleaner way to ensure the start != exit
+                    $('#map-info .exit span').text(this.labelContent);
+                    toll_calc.settings.step++;
+                    toll_calc.settings.end = this; // we need to remember the end for calcRoute later
+                    toll_calc.calcRoute();         // calculate new route path
+                  }
                 }
+                // update label
+                toll_calc.selectMarker(this);
+                //this.setIcon(markerImgs['hover']);
               }
             });
+
             // Handle hover of marker
-            //http://stackoverflow.com/questions/8198635/change-marker-icon-on-mouseover-google-maps-v3
             google.maps.event.addListener(markers[i], 'mouseover', function() {
-              this.setIcon(markerImgs['hover']);
+              if (this.labelID != 'markerMain') { // no effects
+                this.setIcon(markerImgs['hover']);
+              }
             });
             google.maps.event.addListener(markers[i], 'mouseout', function() {
-              this.setIcon(markerImgs['default']);
+              // Don't reset main toll plaza marker, or any marker that is selected as part
+              //  of the user's expected route
+              if (this.labelID != 'markerMain' && (this.labelClass.search('selected') < 0)) {
+                this.setIcon(markerImgs['default']);
+              }
             });
           }
+        },
+        
+        // Update the marker class
+        selectMarker: function(marker) {
+          var markerImgs = this.getMarkerImgs();
+          marker.set('labelClass', marker.labelClass+' selected');
+          marker.setIcon(markerImgs['hover']);
+        },
+        
+        // Reset markers as needed
+        resetMarkers: function() {
+          var markerImgs = this.getMarkerImgs();
+          for (var i in this.settings.markers) {
+            if (this.settings.markers[i].labelID != 'markerMain') {
+              if (this.settings.markers[i].labelClass.search('selected') > 0) {
+                this.settings.markers[i].set('labelClass', this.settings.markers[i].labelClass.slice(0, -9));
+              }
+              this.settings.markers[i].setIcon(markerImgs['default']);
+            }
+          }
+          this.calcRoute(true);
         },
         
         // Return an object of all marker images
@@ -197,6 +233,12 @@
             origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
             anchor: new google.maps.Point(10, 10) // The anchor for this image is the center the image.
           };
+          markerImgs['main'] = {
+            url: 'MarkerMain.png',
+            size: new google.maps.Size(13, 20),   // This marker is 20 pixels wide by 20 pixels high.
+            origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
+            anchor: new google.maps.Point(10, 10) // The anchor for this image is the center the image.
+          };
           return markerImgs;
         },
         
@@ -206,30 +248,40 @@
           var markers = {};
           var images = this.getMarkerImgs();
 
-          markers['markerStart'] = new MarkerWithLabel({ // start
-              position: new google.maps.LatLng(38.932311, -77.213286),
+          // markers are layed out from East to West
+          markers['markerEnd'] = new MarkerWithLabel({ // End
+              position: new google.maps.LatLng(38.931673, -77.212148),
               map: this.settings.map,
               icon: images['default'],
-              labelID: 'markerStart',
+              labelNo: 1,
+              labelID: 'markerEnd',
               labelContent: 'Continue to/from 267',
-              labelClass: "label bot lbl-start",
+              labelClass: "label bot lbl-end",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(56, -15),
           });
           markers['markerSpringHill'] = new MarkerWithLabel({ // Spring hill rd exit
-              position: new google.maps.LatLng(38.933838, -77.233125),
+              position: new google.maps.LatLng(38.933476, -77.233097),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 2,
               labelID: 'markerSpringHill',
               labelContent: 'Spring Hill Rd.',
               labelClass: "label top lbl-springhill",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(37, 33),
           });
+          markers['markerMain'] = new MarkerWithLabel({ // Main toll plaza
+              position: new google.maps.LatLng(38.934199, -77.238835),
+              map: this.settings.map,
+              icon: images['main'],
+              labelID: 'markerMain'
+          });
           markers['markerLeesburgPike'] = new MarkerWithLabel({ // Leesburg Pike exit
-              position: new google.maps.LatLng(38.934205, -77.246709),
+              position: new google.maps.LatLng(38.933952, -77.246473),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 3,
               labelID: 'markerLeesburgPike',
               labelContent: 'Leesburg Pike',
               labelClass: "label bot lbl-leesburg",
@@ -237,9 +289,10 @@
               labelAnchor: new google.maps.Point(37, -15)
           });
           markers['markerWolftrap'] = new MarkerWithLabel({ // Wolftrap exit
-              position: new google.maps.LatLng(38.936575, -77.267609),
+              position: new google.maps.LatLng(38.936173, -77.267612),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 4,
               labelID: 'markerWolftrap',
               labelContent: 'Wolftrap Rd.',
               labelClass: "label top lbl-wolftrap",
@@ -247,9 +300,10 @@
               labelAnchor: new google.maps.Point(33, 33)
           });
           markers['markerHunterMill'] = new MarkerWithLabel({ // Hunter Mill exit
-              position: new google.maps.LatLng(38.947811, -77.311951),
+              position: new google.maps.LatLng(38.947480, -77.311970),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 5,
               labelID: 'markerHunterMill',
               labelContent: 'Huntermill Rd.',
               labelClass: "label top lbl-huntermill",
@@ -257,9 +311,10 @@
               labelAnchor: new google.maps.Point(38, 33)
           });
           markers['markerWiehle'] = new MarkerWithLabel({ // Wiehle Ave exit
-              position: new google.maps.LatLng(38.946989, -77.337679),
+              position: new google.maps.LatLng(38.946697, -77.337822),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 6,
               labelID: 'markerWiehle',
               labelContent: 'Wiehle Ave.',
               labelClass: "label bot lbl-wiehle",
@@ -267,9 +322,10 @@
               labelAnchor: new google.maps.Point(32, -15)
           });
           markers['markerReston'] = new MarkerWithLabel({ // Reston Parkway exit
-              position: new google.maps.LatLng(38.952225, -77.356310),
+              position: new google.maps.LatLng(38.951924, -77.356179),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 7,
               labelID: 'markerReston',
               labelContent: 'Reston Parkway',
               labelClass: "label top lbl-reston",
@@ -277,9 +333,10 @@
               labelAnchor: new google.maps.Point(44, 33)
           });
           markers['markerFairfax'] = new MarkerWithLabel({ // Fairfax Parkway exit
-              position: new google.maps.LatLng(38.953192, -77.374011),
+              position: new google.maps.LatLng(38.952877, -77.374265),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 8,
               labelID: 'markerFairfax',
               labelContent: 'Fairfax Parkway',
               labelClass: "label bot lbl-fairfax",
@@ -287,9 +344,10 @@
               labelAnchor: new google.maps.Point(41, -15),
           });
           markers['markerMonroe'] = new MarkerWithLabel({ // Monroe St. exit
-              position: new google.maps.LatLng(38.953256, -77.388697),
+              position: new google.maps.LatLng(38.952984, -77.388808),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 8,
               labelID: 'markerMonroe',
               labelContent: 'Monroe St.',
               labelClass: "label top lbl-monroe",
@@ -297,9 +355,10 @@
               labelAnchor: new google.maps.Point(29, 33)
           });
           markers['markerCenterville'] = new MarkerWithLabel({ // Centerville Rd. exit
-              position: new google.maps.LatLng(38.956835, -77.404270),
+              position: new google.maps.LatLng(38.956560, -77.404512),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 9,
               labelID: 'markerCenterville',
               labelContent: 'Centerville Rd.',
               labelClass: "label bot lbl-centerville",
@@ -307,22 +366,24 @@
               labelAnchor: new google.maps.Point(38, -15)
           });
           markers['markerSully'] = new MarkerWithLabel({ // Sully Rd. exit
-              position: new google.maps.LatLng(38.962501, -77.423039),
+              position: new google.maps.LatLng(38.962125, -77.422574),
               map: this.settings.map,
               icon: images['default'],
+              labelNo: 10,
               labelID: 'markerSully',
               labelContent: 'Sully Rd.',
               labelClass: "label bot lbl-sully",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(24, -15)
           });
-          markers['markerEnd'] = new MarkerWithLabel({ // On to Dulles Greenway
-              position: new google.maps.LatLng(38.965296, -77.429219),
+          markers['markerStart'] = new MarkerWithLabel({ // On to Dulles Greenway
+              position: new google.maps.LatLng(38.966176, -77.430888),
               map: this.settings.map,
               icon: images['default'],
-              labelID: 'markerEnd',
+              labelNo: 11,
+              labelID: 'markerStart',
               labelContent: 'Continue to/from Dulles Greenway',
-              labelClass: "label top lbl-end",
+              labelClass: "label top lbl-start",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(88, 33)
           });
