@@ -3,38 +3,251 @@
   <head>
     <title>GMap Toll Road Calculator POC</title>
     <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
-    <script type="text/javascript" src="//maps.google.com/maps/api/js?sensor=true"></script>
-    <script type="text/javascript" src="/tollroad_libs/gmaps/gmaps.js"></script>
-    <script type="text/javascript">
-      var map;
-      $(document).ready(function(){
-        map = new GMaps({
-          div: '#map',
-          lat: 38.945898, 
-          lng: -77.316963,
-          zoom: 12
-        });
-        map.drawRoute({
-          origin: [38.932614, -77.213347],
-          destination: [38.962619, -77.423124],
-          travelMode: 'driving',
-          strokeColor: '#a61aad',
-          strokeOpacity: 0.75,
-          strokeWeight: 8
-        });
-      });
-    </script>
     <style type="text/css">
-      #map,
-      #panorama {
+      #map{
         height:500px;
-        width: 700px;
-        background:#6699cc;
+        width: 900px;
+        float: left;
+      }
+      #map-info {
+        float: left;
+        min-height: 300px;
+        width: 300px;
+        background: #55ACDD;
+        padding: 0 20px 20px;
+      }
+      #map .label {
+        background: rgba(255,255,255,.85);
+        padding: 2px;
+        border: 1px solid #777;
+      }
+      #map .label:before {
+        content: '';
+        display: block;
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid #777;
+        transform: translateX(-50%);
+      }
+      #map .label.top:before {
+        top: auto;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+        border-top: 5px solid #777;
+        bottom: -10px;
       }
     </style>
   </head>
   <body>
     <h1>GMaps Toll Road Calculator POC</h1>
     <div class="map" id="map"></div>
+    <div class="map-info" id="map-info">
+      <h2>Toll Info</h2>
+      <div class="info"></div>
+    </div>
+    <script type="text/javascript">
+
+      function initialize() {
+        var map;
+        var directionsService = new google.maps.DirectionsService;
+        var directionsDisplay = new google.maps.DirectionsRenderer({ 
+          suppressMarkers: true, 
+          polylineOptions: {
+            strokeColor: "#a61aad",
+            strokeWeight: 8,
+            strokeOpacity: .75
+          }
+        }); // (to ensure zoom is respected) preserveViewport: true
+        var tollRd = new google.maps.LatLng(38.945898, -77.316963);
+        var mapOptions = {
+          center: tollRd,
+          zoom: 12
+        };
+        map = new google.maps.Map(document.getElementById("map"), mapOptions);
+        directionsDisplay.setMap(map);
+        calcRoute(directionsService, directionsDisplay);
+        
+        // Uncomment to show traffic layer
+        //var trafficLayer = new google.maps.TrafficLayer();
+        //trafficLayer.setMap(map);
+        
+        // Load markerwithlabels.js file
+        // This script needs to load after google has been initialized
+        $.getScript('/toll_rd_calc/tollroad_libs/markerwithlabels/markerwithlabels.js', function( data, textStatus, jqxhr ) {
+          var markers = addMarkers(map);
+          addEvents(markers);
+        });
+      }
+      
+      // Set up the route.
+      function calcRoute(directionsService, directionsDisplay) {
+        var start = new google.maps.LatLng(38.933463, -77.212364);
+        var end = new google.maps.LatLng(38.966072, -77.430008);
+        var request = {
+          origin:start,
+          destination:end,
+          travelMode: google.maps.TravelMode.DRIVING
+        };
+        directionsService.route(request, function(result, status) {
+          if (status == google.maps.DirectionsStatus.OK) {
+            directionsDisplay.setDirections(result);
+          }
+        });
+      }
+      
+      // Add click events handling
+      //  @TODO add first clicked to start point,
+      //    and last to the end point.
+      function addEvents(markers) {
+        for (var i in markers) {
+          google.maps.event.addListener(markers[i], "click", function (e) {
+            $('#map-info .info').text('Hey! You just clicked '+this.labelID+', the marker for '+this.labelContent); 
+          });
+        }
+      }
+      
+      
+      // Add all markers to the map
+      //  @TODO add arrow endpoint markers
+      function addMarkers(map) {
+        var image = {
+          url: 'Marker.png',
+          size: new google.maps.Size(20, 20),   // This marker is 20 pixels wide by 20 pixels high.
+          origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
+          anchor: new google.maps.Point(10, 10) // The anchor for this image is the center the image.         
+        };
+        var markers = {};
+        markers['markerStart'] = new MarkerWithLabel({ // start
+            position: new google.maps.LatLng(38.932311, -77.213286),
+            map: map,
+            icon: image,
+            labelID: 'markerStart',
+            labelContent: 'Continue to/from 267',
+            labelClass: "label bot lbl-start",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(56, -15),
+        });
+        markers['markerSpringHill'] = new MarkerWithLabel({ // Sring hill rd exit
+            position: new google.maps.LatLng(38.933838, -77.233125),
+            map: map,
+            icon: image,
+            labelID: 'markerSpringHill',
+            labelContent: 'Spring Hill Rd.',
+            labelClass: "label top lbl-springhill",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(37, 33),
+        });
+        markers['markerLeesburgPike'] = new MarkerWithLabel({ // Leesburg Pike exit
+            position: new google.maps.LatLng(38.934205, -77.246709),
+            map: map,
+            icon: image,
+            labelID: 'markerLeesburgPike',
+            labelContent: 'Leesburg Pike',
+            labelClass: "label bot lbl-leesburg",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(37, -15)
+        });
+        markers['markerWolftrap'] = new MarkerWithLabel({ // Wolftrap exit
+            position: new google.maps.LatLng(38.936575, -77.267609),
+            map: map,
+            icon: image,
+            labelID: 'markerWolftrap',
+            labelContent: 'Wolftrap Rd.',
+            labelClass: "label top lbl-wolftrap",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(33, 33)
+        });
+        markers['markerHunterMill'] = new MarkerWithLabel({ // Hunter Mill exit
+            position: new google.maps.LatLng(38.947811, -77.311951),
+            map: map,
+            icon: image,
+            labelID: 'markerHunterMill',
+            labelContent: 'Huntermill Rd.',
+            labelClass: "label top lbl-huntermill",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(38, 33)
+        });
+        markers['markerWiehle'] = new MarkerWithLabel({ // Wiehle Ave exit
+            position: new google.maps.LatLng(38.946989, -77.337679),
+            map: map,
+            icon: image,
+            labelID: 'markerWiehle',
+            labelContent: 'Wiehle Ave.',
+            labelClass: "label bot lbl-wiehle",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(32, -15)
+        });
+        markers['markerReston'] = new MarkerWithLabel({ // Reston Parkway exit
+            position: new google.maps.LatLng(38.952225, -77.356310),
+            map: map,
+            icon: image,
+            labelID: 'markerReston',
+            labelContent: 'Reston Parkway',
+            labelClass: "label top lbl-reston",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(44, 33)
+        });
+        markers['markerFairfax'] = new MarkerWithLabel({ // Fairfax Parkway exit
+            position: new google.maps.LatLng(38.953192, -77.374011),
+            map: map,
+            icon: image,
+            labelID: 'markerFairfax',
+            labelContent: 'Fairfax Parkway',
+            labelClass: "label bot lbl-fairfax",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(41, -15),
+        });
+        markers['markerMonroe'] = new MarkerWithLabel({ // Monroe St. exit
+            position: new google.maps.LatLng(38.953256, -77.388697),
+            map: map,
+            icon: image,
+            labelID: 'markerMonroe',
+            labelContent: 'Monroe St.',
+            labelClass: "label top lbl-monroe",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(29, 33)
+        });
+        markers['markerCenterville'] = new MarkerWithLabel({ // Centerville Rd. exit
+            position: new google.maps.LatLng(38.956835, -77.404270),
+            map: map,
+            icon: image,
+            labelID: 'markerCenterville',
+            labelContent: 'Centerville Rd.',
+            labelClass: "label bot lbl-centerville",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(38, -15)
+        });
+        markers['markerSully'] = new MarkerWithLabel({ // Sully Rd. exit
+            position: new google.maps.LatLng(38.962501, -77.423039),
+            map: map,
+            icon: image,
+            labelID: 'markerSully',
+            labelContent: 'Sully Rd.',
+            labelClass: "label bot lbl-sully",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(24, -15)
+        });
+        markers['markerEnd'] = new MarkerWithLabel({ // On to Dulles Greenway
+            position: new google.maps.LatLng(38.965296, -77.429219),
+            map: map,
+            icon: image,
+            labelID: 'markerEnd',
+            labelContent: 'Continue to/from Dulles Greenway',
+            labelClass: "label top lbl-end",
+            labelInForeground: true,
+            labelAnchor: new google.maps.Point(88, 33)
+        });
+        return markers;
+      }
+
+    </script>
+    <script 
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBmJ2morRvylFgmS-bcKsCPeklcxJ2lZTg&callback=initialize">
+    </script>
   </body>
 </html>
