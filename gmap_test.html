@@ -3,6 +3,7 @@
   <head>
     <title>GMap Toll Road Calculator POC</title>
     <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
     <style type="text/css">
       #map{
         height:500px;
@@ -11,50 +12,63 @@
       }
       #map-info {
         float: left;
-        min-height: 300px;
         width: 300px;
-        background: #55ACDD;
+        background: #84AED5;
+        border: 1px solid #55ACDD;
         padding: 0 20px 20px;
+        margin-left: 5px;
       }
-      #map .label {
+      #map-info .alert {
+        padding: 7px;
+      }
+      #map-info .messages {
+        margin-bottom: 0;
+        margin-top: 1em;
+      }
+      #map-info .messages ul {
+        padding-left: 15px;
+      }
+      #map-info #axles-form {
+        margin-top: 1em;
+      }
+      #map-info .toll {
+        margin-top: 1em;
+      }
+      #map .marker-label {
         background: rgba(255,255,255,.85);
         padding: 2px;
         border: 1px solid #444;
+        font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+        /*font-size: 15px;*/
       }
-      /* These arrows are messing up the hover */
-      /* We can put the arrows in the icon to eliminate this issue. */
-      /*#map .label:before {
-        content: '';
-        display: block;
-        position: absolute;
-        top: -10px;
-        left: 50%;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-top: 5px solid transparent;
-        border-bottom: 5px solid #444;
-        transform: translateX(-50%);
-      }
-      #map .label.top:before {
-        top: auto;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-bottom: 5px solid transparent;
-        border-top: 5px solid #444;
-        bottom: -10px;
-      }*/
     </style>
   </head>
   <body>
-    <h1>GMaps Toll Road Calculator POC</h1>
+    <h1>Dulles Toll Road Calculator</h1>
+    
+    <!-- Container for map -->
     <div class="map" id="map"></div>
+    
+    <!-- Block for info display -->
     <div class="map-info" id="map-info">
-      <h2>Toll Info</h2>
+      <h4>Dulles Toll Road Calculator</h4>
       <div class="start"><strong>Start</strong>: <span></span></div>
-      <div class="exit"><strong>Exit</strong>: <span></span></div>
+      <div class="end"><strong>Exit</strong>: <span></span></div>
+      <div class="axles">
+        <form id="axles-form">
+          <div><label><input class="axle-check" type="checkbox" name="2axles" value="2" checked="checked"> 2 Axles</label></div>
+          <div><label><input class="axle-check" type="checkbox" name="3axles" value="3"> 3 Axles</label></div>
+          <div><label><input class="axle-check" type="checkbox" name="4axles" value="4"> 4 Axles</label></div>
+          <div><label><input class="axle-check" type="checkbox" name="5axles" value="5"> 5 Axles</label></div>
+          <div><label><input class="axle-check" type="checkbox" name="6axles" value="6"> 6+ Axles</label></div>
+        </form>
+      </div>
+      <div class="toll"><strong>Toll</strong>: <span></span></div>
+      <div class="messages alert alert-danger"></div>
     </div>
+    
     <script type="text/javascript">
-      var toll_calc = {
+      var tollCalc = {
         settings: { // ---> Useful items to keep track of for the rest of the app
           step:  0,       // help determine if we are working on start or end point
           start: {},      // Starting point for the users selected route
@@ -67,7 +81,9 @@
           markers: {},    // A list of markers
           orig_start: {}, // original start point
           orig_end: {},   // original end point
-          heading: ''     // keep track of the heading the user has selected (east / west)
+          heading: '',    // keep track of the heading the user has selected (east / west)
+          messages: [],   // Any messages that should be shown to user should be pushed here
+          messageCont: $('#map-info .messages').hide() // Container for the messages
         },
         
         initialize: function() {
@@ -94,20 +110,22 @@
           this.settings.directionsDisplay.setMap(this.settings.map);
           this.calcRoute(); // calculate default route
 
-          // Uncomment to show traffic layer
+          // Uncomment to show traffic layer - May be moved into an enableable function later
           //var trafficLayer = new google.maps.TrafficLayer();
           //trafficLayer.setMap(map);
           
           // Load markerwithlabels.js file
           // This script needs to load after google has been initialized
-          var toll_calc = this;
+          var tollCalc = this;
           $.getScript('/toll_rd_calc/tollroad_libs/markerwithlabels/markerwithlabels.js', function( data, textStatus, jqxhr ) {
-            toll_calc.settings.markers = toll_calc.addMarkers();
-            toll_calc.addEvents();
+            tollCalc.settings.markers = tollCalc.addMarkers();
+            tollCalc.addEvents();
           });
           
+          this.initCheckboxes();
         },
         
+     
         // Set up the route.
         calcRoute: function(reset) {
           var reset = (reset) ? reset : false;
@@ -119,14 +137,12 @@
           if (this.settings.start.hasOwnProperty('position') &&
               this.settings.end.hasOwnProperty('position') && !reset) {
             
-            if (this.settings.start.labelNo > this.settings.end.labelNo) { // east bound
-              this.settings.heading = 'east';
+            if (this.settings.heading == 'east') { // east bound
               // The route maps fine this way :)
               start = new google.maps.LatLng(this.settings.start.position.H, this.settings.start.position.L);
               end   = new google.maps.LatLng(this.settings.end.position.H, this.settings.end.position.L);
             }
             else { // west bound
-              this.settings.heading = 'west';
               // When headed west, the directions need to be reversed to keep the route on the right path
               //  If and when we handle the east and west bound traffic differently (adding new route markers etc.) this 
               //  can be updated (and or removed)
@@ -139,45 +155,176 @@
             destination: end,
             travelMode: google.maps.TravelMode.DRIVING
           };
-          var toll_calc = this;
+          var tollCalc = this;
 
           this.settings.directionsService.route(request, function(result, status) {
             if (status == google.maps.DirectionsStatus.OK) {
-              toll_calc.settings.directionsDisplay.setDirections(result);
+              tollCalc.settings.directionsDisplay.setDirections(result);
             }
           });
         },
+
+
+        // Set the user's proposed heading
+        setHeading: function(marker) {
+          if (this.settings.start.labelNo > marker.labelNo) { // east bound
+            this.settings.heading = 'east';
+          }
+          else {
+            this.settings.heading = 'west';
+          }
+        },
+
+
+        // Ensure the route selected is a valid one.
+        verifyRoute: function(marker) {
+          var start = this.settings.start;
+          var end   = marker;
+          var msgs  = [];
+
+          // Set the heading given the endpoint (marker)
+          this.setHeading(marker);
+
+          // I want to print starting point messages
+          //  before printing ending point messages.
+          
+          // Starting point msgs
+          if (this.settings.heading === 'east') { // East
+            // Nothing here yet...
+          }
+          if (this.settings.heading === 'west') { // East
+            if (start.labelNo == 4) {
+              msgs.push('No entry Westbound at '+start.labelContent);
+            }
+          }
+          
+          // Ending point msgs
+          if (this.settings.heading === 'east') { // East
+            if (end.labelNo == 4) {
+              msgs.push('No exit Eastbound at '+end.labelContent);
+            }
+          }
+          if (this.settings.heading === 'west') { // East
+            if (end.labelNo == 9) { // Monroe
+              msgs.push('No exit Westbound at '+end.labelContent);
+            }
+          }
+          
+          if (msgs.length) {
+            this.settings.messages = msgs;
+            this.updateMessages();
+            return false;
+          }
+
+          return true;
+        },
+
+
+        // Update warning messages
+        updateMessages: function(reset) {
+          var reset = (reset) ? true : false;
+          if (!reset) {
+            var content = '';
+            var wrapper = (this.settings.messages.length > 1) ? 'li' : 'div';
+            
+            // Determine wrapper
+            if (this.settings.messages.length > 1) {
+              wrapper = 'li';
+              content += '<ul>';
+            }
+            else {
+              wrapper = 'div';
+            }
+            
+            // Add messages to the content
+            for (var i in this.settings.messages) {
+              content += '<'+wrapper+' class="message">'+this.settings.messages[i]+'</'+wrapper+'>';
+            }
+            
+            if (this.settings.messages.length > 1) content += '</ul>'; // close the ul
+            this.settings.messageCont.html(content).show(); // add messages to screen and show them
+          }
+          else {
+            this.settings.messageCont.html('').hide();
+          }
+        },
+
+
+        // elem should either be 'start', 'end', or 'toll'
+        //  text is the content to show
+        //  Pass nothing or 'true' to reset
+        setInfoText: function(elem, text, reset) {
+          elem = (elem) ? elem : false;
+          if (!elem || reset) { //resetting
+            $('#map-info .start span').text('');
+            $('#map-info .end span').text('');
+            $('#map-info .toll span').text('');
+          }
+          if (elem) {
+            if (elem === 'start') {
+              $('#map-info .end span').text('');
+              $('#map-info .start span').text(text);
+            }
+            else if (elem === 'end') {
+              $('#map-info .end span').text(text);
+            }
+            else if (elem === 'toll') {
+              text = Number(text).toFixed(2);           // covert toll to decimal w 2 digits
+              $('#map-info .toll span').text('$'+text); // set toll in window
+            }
+          }
+        },
         
+        fun: function() {
+          alert('Click');
+        },
+
         // Add click events handling
-        //  @TODO add first clicked to start point,
-        //    and last to the end point.
         addEvents: function() {
           var markerImgs = this.getMarkerImgs();
           var markers    = this.settings.markers; 
-          var toll_calc  = this; // remember this forever!
-
+          var tollCalc   = this;  // remember this forever!
+          var infoWindow = new google.maps.InfoWindow({
+            content:'<div class="marker-window">\
+                       <h5>Is this your starting point or end point?</h5>\
+                       <button type="button" class="btn btn-primary" onclick="tollCalc.fun()">Start</button>\
+                       <button type="button" class="btn btn-danger" onclick="tollCalc.fun()">End</button>\
+                     </div>'
+          }); // End info window content
+          
           for (var i in markers) {
             // Handle click of marker
             google.maps.event.addListener(markers[i], "click", function (e) {
+              
+              infoWindow.open(tollCalc.settings.map, this);
+              
               if (this.labelID != 'markerMain') {     // no changes on click of marker main - you can't exit at main toll plaza
-                if (!(toll_calc.settings.step % 2)) { // starting point
-                  $('#map-info .exit span').text('');
-                  $('#map-info .start span').text(this.labelContent);
-                  toll_calc.resetMarkers();
-                  toll_calc.settings.step++;
-                  toll_calc.settings.start = this; // we need to remember the start for calcRoute later
+                if (!(tollCalc.settings.step % 2)) { // starting point
+                  tollCalc.setInfoText('start', this.labelContent, true);
+                  tollCalc.resetMarkers();
+                  tollCalc.updateMessages(true);
+                  tollCalc.settings.step++;
+                  tollCalc.settings.start = this; // we need to remember the start for calcRoute later
+                  tollCalc.selectMarker(this);    // Update label
                 } 
                 else { // exit point
-                  if (this.labelContent != $('#map-info .start span').text()) { // @TODO find a cleaner way to ensure the start != exit
-                    $('#map-info .exit span').text(this.labelContent);
-                    toll_calc.settings.step++;
-                    toll_calc.settings.end = this; // we need to remember the end for calcRoute later
-                    toll_calc.calcRoute();         // calculate new route path
+                  // Make sure user is not entering at the same spot as they are exiting
+                  if (this.labelID != tollCalc.settings.start.labelID) {
+                    // We need to verify the route before continuing
+                    if (tollCalc.verifyRoute(this)) {
+                      tollCalc.setInfoText('end', this.labelContent);
+                      tollCalc.settings.end = this; // we need to remember the end for calcRoute later
+                      tollCalc.calcRoute();         // calculate new route path
+                      tollCalc.calcToll();          // calculate the toll fee
+                      tollCalc.selectMarker(this);  // Update label
+                    }
+                    else {
+                      tollCalc.setInfoText();  // reset text
+                      tollCalc.resetMarkers(); // reset map
+                    }
+                    tollCalc.settings.step++;
                   }
                 }
-                // update label
-                toll_calc.selectMarker(this);
-                //this.setIcon(markerImgs['hover']);
               }
             });
 
@@ -196,14 +343,84 @@
             });
           }
         },
-        
+
+
+        calcToll: function() {
+          var heading = this.settings.heading;       // Users heading (E/W)
+          var startNo = this.settings.start.labelNo; // The users entry point
+          var endNo   = this.settings.end.labelNo;   // The point that they are exiting at
+          var toll    = 0;                           // cumulative toll fee
+          
+          // here we use the # of axles to select price from tollMap
+          var axles   = Number($('.axle-check:checked').val()) - 2; 
+          
+          // Get the toll price map (based on # axles)
+          var tollMap = this.tollMap();
+          
+          // Do they pass through main toll plaza? - EB || WB
+          if ((startNo >= 3 && endNo < 3) || (startNo <= 2 && endNo > 2)) {
+            toll += tollMap['main'][axles];
+          }
+          
+          // Heading --East--
+          if (heading == 'east') {
+            // Entry points w/out tolls
+            if (startNo != 3 && startNo != 4) { // No entry toll on Wolftrap or Leesburg
+              toll += tollMap[startNo][axles];
+            }
+            if (endNo != 9) { // No exit toll at Monroe
+              toll += tollMap[endNo][axles];
+            }
+          }
+          
+          // Heading --West--
+          if (heading == 'west') {
+            // Entry points w/out tolls
+            if (startNo != 3 && startNo != 9) { // No entry toll on Wolftrap or Monroe
+              toll += tollMap[startNo][axles];
+            }
+            if (endNo != 3 && endNo != 4) { // No exit toll on Wolftrap or Leesburg
+              toll += tollMap[endNo][axles];
+            }
+          }
+          this.setInfoText('toll', toll);
+          //toll = Number(toll).toFixed(2);           // covert toll to decimal w 2 digits
+          //$('#map-info .toll span').text('$'+toll); // set toll in window
+        },
+
+
+        // Get toll mapping according to # axles
+        //  Maps to axle count (2, 3, 4, 5, 6) fee
+        //  tollMap obj Keyed by settings.(start/end point).LabelNo
+        tollMap: function(dir) {
+          var tollMap = {};
+          tollMap[12] = [0, 0, 0,   0, 0];   // Dulles Greenway
+          tollMap[11] = [1, 2, 2.5, 3, 3.5]; // Sully road
+          tollMap[10] = [1, 2, 2.5, 3, 3.5]; // Centerville
+          tollMap[9]  = [1, 2, 2.5, 3, 3.5]; // Monroe
+          tollMap[8]  = [1, 2, 2.5, 3, 3.5]; // Fairfax
+          tollMap[7]  = [1, 2, 2.5, 3, 3.5]; // Reston
+          tollMap[6]  = [1, 2, 2.5, 3, 3.5]; // Wiehle
+          tollMap[5]  = [1, 2, 2.5, 3, 3.5]; // Huntermill
+          tollMap[4]  = [0, 0, 0,   0, 0];   // Wolftrap
+          tollMap[3]  = [1, 2, 2.5, 3, 3.5]; // Leesburg
+          tollMap[2]  = [1, 2, 2.5, 3, 3.5]; // Springhill
+          tollMap[1]  = [0, 0, 0,   0, 0];   // On to 267
+          
+          // Main toll plaza
+          tollMap['main'] = [2.5, 5, 6.25, 7.5, 8.75]; // Not an exit or entrance 
+          return tollMap;
+        },
+
+
         // Update the marker class
         selectMarker: function(marker) {
           var markerImgs = this.getMarkerImgs();
           marker.set('labelClass', marker.labelClass+' selected');
           marker.setIcon(markerImgs['hover']);
         },
-        
+
+
         // Reset markers as needed
         resetMarkers: function() {
           var markerImgs = this.getMarkerImgs();
@@ -217,7 +434,8 @@
           }
           this.calcRoute(true);
         },
-        
+
+
         // Return an object of all marker images
         getMarkerImgs: function() {
           var markerImgs = {};
@@ -241,22 +459,23 @@
           };
           return markerImgs;
         },
-        
+
+
         // Add all markers to the map
         //  @TODO add arrow endpoint markers
         addMarkers: function() {
           var markers = {};
           var images = this.getMarkerImgs();
 
-          // markers are layed out from East to West
-          markers['markerEnd'] = new MarkerWithLabel({ // End
+          // markers are layed out from East most (1) to West most (12)
+          markers['markerStart'] = new MarkerWithLabel({ // Start
               position: new google.maps.LatLng(38.931673, -77.212148),
               map: this.settings.map,
               icon: images['default'],
               labelNo: 1,
-              labelID: 'markerEnd',
+              labelID: 'markerStart',
               labelContent: 'Continue to/from 267',
-              labelClass: "label bot lbl-end",
+              labelClass: "marker-label bot lbl-start",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(56, -15),
           });
@@ -267,7 +486,7 @@
               labelNo: 2,
               labelID: 'markerSpringHill',
               labelContent: 'Spring Hill Rd.',
-              labelClass: "label top lbl-springhill",
+              labelClass: "marker-label top lbl-springhill",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(37, 33),
           });
@@ -284,7 +503,7 @@
               labelNo: 3,
               labelID: 'markerLeesburgPike',
               labelContent: 'Leesburg Pike',
-              labelClass: "label bot lbl-leesburg",
+              labelClass: "marker-label bot lbl-leesburg",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(37, -15)
           });
@@ -295,7 +514,7 @@
               labelNo: 4,
               labelID: 'markerWolftrap',
               labelContent: 'Wolftrap Rd.',
-              labelClass: "label top lbl-wolftrap",
+              labelClass: "marker-label top lbl-wolftrap",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(33, 33)
           });
@@ -306,7 +525,7 @@
               labelNo: 5,
               labelID: 'markerHunterMill',
               labelContent: 'Huntermill Rd.',
-              labelClass: "label top lbl-huntermill",
+              labelClass: "marker-label top lbl-huntermill",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(38, 33)
           });
@@ -317,7 +536,7 @@
               labelNo: 6,
               labelID: 'markerWiehle',
               labelContent: 'Wiehle Ave.',
-              labelClass: "label bot lbl-wiehle",
+              labelClass: "marker-label bot lbl-wiehle",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(32, -15)
           });
@@ -328,7 +547,7 @@
               labelNo: 7,
               labelID: 'markerReston',
               labelContent: 'Reston Parkway',
-              labelClass: "label top lbl-reston",
+              labelClass: "marker-label top lbl-reston",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(44, 33)
           });
@@ -339,7 +558,7 @@
               labelNo: 8,
               labelID: 'markerFairfax',
               labelContent: 'Fairfax Parkway',
-              labelClass: "label bot lbl-fairfax",
+              labelClass: "marker-label bot lbl-fairfax",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(41, -15),
           });
@@ -347,10 +566,10 @@
               position: new google.maps.LatLng(38.952984, -77.388808),
               map: this.settings.map,
               icon: images['default'],
-              labelNo: 8,
+              labelNo: 9,
               labelID: 'markerMonroe',
               labelContent: 'Monroe St.',
-              labelClass: "label top lbl-monroe",
+              labelClass: "marker-label top lbl-monroe",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(29, 33)
           });
@@ -358,10 +577,10 @@
               position: new google.maps.LatLng(38.956560, -77.404512),
               map: this.settings.map,
               icon: images['default'],
-              labelNo: 9,
+              labelNo: 10,
               labelID: 'markerCenterville',
               labelContent: 'Centerville Rd.',
-              labelClass: "label bot lbl-centerville",
+              labelClass: "marker-label bot lbl-centerville",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(38, -15)
           });
@@ -369,31 +588,48 @@
               position: new google.maps.LatLng(38.962125, -77.422574),
               map: this.settings.map,
               icon: images['default'],
-              labelNo: 10,
+              labelNo: 11,
               labelID: 'markerSully',
               labelContent: 'Sully Rd.',
-              labelClass: "label bot lbl-sully",
+              labelClass: "marker-label bot lbl-sully",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(24, -15)
           });
-          markers['markerStart'] = new MarkerWithLabel({ // On to Dulles Greenway
+          markers['markerEnd'] = new MarkerWithLabel({ // On to Dulles Greenway
               position: new google.maps.LatLng(38.966176, -77.430888),
               map: this.settings.map,
               icon: images['default'],
-              labelNo: 11,
-              labelID: 'markerStart',
+              labelNo: 12,
+              labelID: 'markerEnd',
               labelContent: 'Continue to/from Dulles Greenway',
-              labelClass: "label top lbl-start",
+              labelClass: "marker-label top lbl-end",
               labelInForeground: true,
               labelAnchor: new google.maps.Point(88, 33)
           });
           return markers;
+        },
+
+
+        // Ensure only one checkbox can be selected      
+        initCheckboxes: function() {
+          var tollCalc = this;
+          $('.axle-check').click(function() {
+            $('.axle-check').prop("checked", false);
+            $(this).prop("checked", true);
+
+            // Must have a position on start and end to calcToll
+            if (tollCalc.settings.start.hasOwnProperty('position') &&
+                tollCalc.settings.end.hasOwnProperty('position')) {
+              tollCalc.calcToll();      
+            }
+          });
         }
       };
+      
 
     </script>
     <script 
-      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBmJ2morRvylFgmS-bcKsCPeklcxJ2lZTg&callback=toll_calc.initialize">
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBmJ2morRvylFgmS-bcKsCPeklcxJ2lZTg&callback=tollCalc.initialize">
     </script>
   </body>
 </html>
