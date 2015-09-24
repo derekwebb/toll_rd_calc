@@ -52,6 +52,11 @@
     <!-- Block for info display -->
     <div class="map-info" id="map-info">
       <h4>Dulles Toll Road Calculator</h4>
+      <div class="traffic">
+        <form id="axles-form">
+          <div><label><input class="traffic-check" type="checkbox" name="traffic"> Enable traffic</label></div>
+        </form>
+      </div>
       <div class="start"><strong>Start</strong>: <span></span></div>
       <div class="end"><strong>Exit</strong>: <span></span></div>
       <div class="axles">
@@ -77,13 +82,15 @@
           directionsDisplay: {}, // (to ensure zoom is respected) preserveViewport: true
           mapOptions: {}, // map options (obviously)
           map: {},        // google map obj
+          traffic: {},    // google traffic layer
           center: {},     // center point of the map
           markers: {},    // A list of markers
           orig_start: {}, // original start point
           orig_end: {},   // original end point
           heading: '',    // keep track of the heading the user has selected (east / west)
           messages: [],   // Any messages that should be shown to user should be pushed here
-          messageCont: $('#map-info .messages').hide() // Container for the messages
+          messageCont: $('#map-info .messages').hide(), // Container for the messages
+          infoWindows: {} // A set of info windows keyed by marker labelNo
         },
         
         initialize: function() {
@@ -108,21 +115,30 @@
           }); // (to ensure zoom is respected) preserveViewport: true
           
           this.settings.directionsDisplay.setMap(this.settings.map);
+          this.settings.traffic = new google.maps.TrafficLayer(), // traffic layer
           this.calcRoute(); // calculate default route
 
-          // Uncomment to show traffic layer - May be moved into an enableable function later
-          //var trafficLayer = new google.maps.TrafficLayer();
-          //trafficLayer.setMap(map);
-          
           // Load markerwithlabels.js file
           // This script needs to load after google has been initialized
           var tollCalc = this;
           $.getScript('/toll_rd_calc/tollroad_libs/markerwithlabels/markerwithlabels.js', function( data, textStatus, jqxhr ) {
-            tollCalc.settings.markers = tollCalc.addMarkers();
+            tollCalc.addMarkers();
+            tollCalc.initInfoWindows();
             tollCalc.addEvents();
           });
           
           this.initCheckboxes();
+        },
+        
+        
+        // Enable/disable traffic layer
+        toggleTraffic: function(status) {
+          if (status) {
+            this.settings.traffic.setMap(this.settings.map);
+          }
+          else {
+            this.settings.traffic.setMap(null);
+          }
         },
         
      
@@ -166,8 +182,8 @@
 
 
         // Set the user's proposed heading
-        setHeading: function(marker) {
-          if (this.settings.start.labelNo > marker.labelNo) { // east bound
+        setHeading: function() {
+          if (this.settings.start.labelNo > this.settings.end.labelNo) { // east bound
             this.settings.heading = 'east';
           }
           else {
@@ -177,20 +193,20 @@
 
 
         // Ensure the route selected is a valid one.
-        verifyRoute: function(marker) {
+        verifyRoute: function() {
           var start = this.settings.start;
-          var end   = marker;
+          var end   = this.settings.end;
           var msgs  = [];
 
           // Set the heading given the endpoint (marker)
-          this.setHeading(marker);
+          this.setHeading();
 
           // I want to print starting point messages
           //  before printing ending point messages.
           
           // Starting point msgs
           if (this.settings.heading === 'east') { // East
-            // Nothing here yet...
+            // Nothing to see here... move along.
           }
           if (this.settings.heading === 'west') { // East
             if (start.labelNo == 4) {
@@ -210,9 +226,14 @@
             }
           }
           
+          if (this.settings.start.labelNo === this.settings.end.labelNo) {
+            msgs.push('Cannot end route at starting point');
+          }
+          
           if (msgs.length) {
             this.settings.messages = msgs;
             this.updateMessages();
+            this.resetMarkers();
             return false;
           }
 
@@ -223,7 +244,7 @@
         // Update warning messages
         updateMessages: function(reset) {
           var reset = (reset) ? true : false;
-          if (!reset) {
+          if (!reset) { // don't reset
             var content = '';
             var wrapper = (this.settings.messages.length > 1) ? 'li' : 'div';
             
@@ -244,7 +265,7 @@
             if (this.settings.messages.length > 1) content += '</ul>'; // close the ul
             this.settings.messageCont.html(content).show(); // add messages to screen and show them
           }
-          else {
+          else { // reset msgs
             this.settings.messageCont.html('').hide();
           }
         },
@@ -262,7 +283,6 @@
           }
           if (elem) {
             if (elem === 'start') {
-              $('#map-info .end span').text('');
               $('#map-info .start span').text(text);
             }
             else if (elem === 'end') {
@@ -275,56 +295,76 @@
           }
         },
         
-        fun: function() {
-          alert('Click');
+        
+        // Set a point for the route
+        setPoint: function(pos, marker) {
+          marker = this.settings.markers[marker];
+          
+          // @TODO - if the user selects only starting or ending points
+          //  we need to make sure this in not incremented beyond the first
+          //  increment.
+          if (!(this.settings.step % 2)) {
+            this.resetMarkers();
+            this.setInfoText();
+            this.updateMessages(true);
+          }
+          this.settings.step++;
+          
+          // Set start point
+          if (pos == 'start') {
+            this.setInfoText('start', marker.labelContent);
+            this.settings.start = marker; // we need to remember the start for calcRoute later
+            this.selectMarker(this.settings.start);  // Update label
+          }
+          
+          // Set end point
+          else {
+            tollCalc.setInfoText('end', marker.labelContent);
+            tollCalc.settings.end = marker; // we need to remember the end for calcRoute later
+            tollCalc.selectMarker(tollCalc.settings.end);  // Update label
+          }
+          
+          if (tollCalc.settings.start.hasOwnProperty('position') &&
+              tollCalc.settings.end.hasOwnProperty('position')) { // && 
+              //!(this.settings.step % 2)) {
+            if (tollCalc.verifyRoute()) {
+              tollCalc.calcRoute();           // calculate new route path
+              tollCalc.calcToll();            // calculate the toll fee
+            }     
+          }
+          this.settings.infoWindows[marker.labelID].close();
         },
+
+        
+        // Initialize the info windows with route declaration buttons
+        initInfoWindows: function() {
+          //console.log(this.settings.markers);
+          var markers = this.settings.markers;
+          for (var i in markers) {
+            //console.log(markers[i]);
+            this.settings.infoWindows[markers[i].labelID] = new google.maps.InfoWindow({
+              content:'<div class="marker-window">\
+                         <h5>Is this your starting point or end point?</h5>\
+                         <button type="button" class="btn btn-primary" onclick="tollCalc.setPoint(\'start\', \''+markers[i].labelID+'\')">Start</button>\
+                         <button type="button" class="btn btn-danger" onclick="tollCalc.setPoint(\'end\', \''+markers[i].labelID+'\')">End</button>\
+                       </div>'
+            }); 
+          }
+        },
+
 
         // Add click events handling
         addEvents: function() {
-          var markerImgs = this.getMarkerImgs();
-          var markers    = this.settings.markers; 
-          var tollCalc   = this;  // remember this forever!
-          var infoWindow = new google.maps.InfoWindow({
-            content:'<div class="marker-window">\
-                       <h5>Is this your starting point or end point?</h5>\
-                       <button type="button" class="btn btn-primary" onclick="tollCalc.fun()">Start</button>\
-                       <button type="button" class="btn btn-danger" onclick="tollCalc.fun()">End</button>\
-                     </div>'
-          }); // End info window content
-          
+          var markerImgs  = this.getMarkerImgs();
+          var markers     = this.settings.markers; 
+          var tollCalc    = this;  // remember this forever!
+         
           for (var i in markers) {
             // Handle click of marker
             google.maps.event.addListener(markers[i], "click", function (e) {
-              
-              infoWindow.open(tollCalc.settings.map, this);
-              
-              if (this.labelID != 'markerMain') {     // no changes on click of marker main - you can't exit at main toll plaza
-                if (!(tollCalc.settings.step % 2)) { // starting point
-                  tollCalc.setInfoText('start', this.labelContent, true);
-                  tollCalc.resetMarkers();
-                  tollCalc.updateMessages(true);
-                  tollCalc.settings.step++;
-                  tollCalc.settings.start = this; // we need to remember the start for calcRoute later
-                  tollCalc.selectMarker(this);    // Update label
-                } 
-                else { // exit point
-                  // Make sure user is not entering at the same spot as they are exiting
-                  if (this.labelID != tollCalc.settings.start.labelID) {
-                    // We need to verify the route before continuing
-                    if (tollCalc.verifyRoute(this)) {
-                      tollCalc.setInfoText('end', this.labelContent);
-                      tollCalc.settings.end = this; // we need to remember the end for calcRoute later
-                      tollCalc.calcRoute();         // calculate new route path
-                      tollCalc.calcToll();          // calculate the toll fee
-                      tollCalc.selectMarker(this);  // Update label
-                    }
-                    else {
-                      tollCalc.setInfoText();  // reset text
-                      tollCalc.resetMarkers(); // reset map
-                    }
-                    tollCalc.settings.step++;
-                  }
-                }
+              // no changes on click of marker main - you can't exit at main toll plaza
+              if (this.labelID != 'markerMain') {
+                tollCalc.settings.infoWindows[this.labelID].open(tollCalc.settings.map, this);
               }
             });
 
@@ -345,6 +385,7 @@
         },
 
 
+        // Calculate the driver's toll
         calcToll: function() {
           var heading = this.settings.heading;       // Users heading (E/W)
           var startNo = this.settings.start.labelNo; // The users entry point
@@ -384,8 +425,6 @@
             }
           }
           this.setInfoText('toll', toll);
-          //toll = Number(toll).toFixed(2);           // covert toll to decimal w 2 digits
-          //$('#map-info .toll span').text('$'+toll); // set toll in window
         },
 
 
@@ -432,7 +471,9 @@
               this.settings.markers[i].setIcon(markerImgs['default']);
             }
           }
-          this.calcRoute(true);
+          this.settings.start = {};
+          this.settings.end   = {};
+          this.calcRoute(true); // Passing true resets the route (full length route line appears)
         },
 
 
@@ -606,7 +647,8 @@
               labelInForeground: true,
               labelAnchor: new google.maps.Point(88, 33)
           });
-          return markers;
+          
+          this.settings.markers = markers;
         },
 
 
@@ -622,6 +664,10 @@
                 tollCalc.settings.end.hasOwnProperty('position')) {
               tollCalc.calcToll();      
             }
+          });
+          
+          $('.traffic-check').click(function() {
+            tollCalc.toggleTraffic($(this).prop("checked"));
           });
         }
       };
