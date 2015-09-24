@@ -52,11 +52,6 @@
     <!-- Block for info display -->
     <div class="map-info" id="map-info">
       <h4>Dulles Toll Road Calculator</h4>
-      <div class="traffic">
-        <form id="axles-form">
-          <div><label><input class="traffic-check" type="checkbox" name="traffic"> Enable traffic</label></div>
-        </form>
-      </div>
       <div class="start"><strong>Start</strong>: <span></span></div>
       <div class="end"><strong>Exit</strong>: <span></span></div>
       <div class="axles">
@@ -69,6 +64,11 @@
         </form>
       </div>
       <div class="toll"><strong>Toll</strong>: <span></span></div>
+      <div class="traffic">
+        <form id="axles-form">
+          <div><label><input class="traffic-check" type="checkbox" name="traffic"> <span>Enable traffic</span></label></div>
+        </form>
+      </div>
       <div class="messages alert alert-danger"></div>
     </div>
     
@@ -668,6 +668,12 @@
           
           $('.traffic-check').click(function() {
             tollCalc.toggleTraffic($(this).prop("checked"));
+            if ($(this).prop("checked")) {
+              $(this).parent('label').find('span').text('Disable traffic');
+            }
+            else {
+              $(this).parent('label').find('span').text('Enable traffic');
+            }
           });
         }
       };
