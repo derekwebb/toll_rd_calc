@@ -1,13 +1,19 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>GMap Toll Road Calculator POC</title>
+    <title>Dulles Toll Road Calculator</title>
     <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
     <style type="text/css">
+      body {
+        height: 100%;
+        max-width: 1200px;
+        margin: 10px auto;
+      }
       #map{
-        height:500px;
-        width: 900px;
+        height:inherit;
+        width: 800px;
+        height: 400px;
         float: left;
       }
       #map-info {
@@ -16,44 +22,94 @@
         background: #84AED5;
         border: 1px solid #55ACDD;
         padding: 0 20px 20px;
-        margin-left: 5px;
+        box-sizing: border-box;
       }
       #map-info .alert {
         padding: 7px;
       }
+      #map-info .alert-info {
+        background: #fff;
+        font-weight: bold;
+      }
+      #map-info .alert-info .start label,
+      #map-info .alert-info .end label {
+        min-width: 40px;
+      }
+      #map-info .alert-info .point {
+        color: #000;
+      }
       #map-info .messages {
         margin-bottom: 0;
-        margin-top: 1em;
+        margin-top: .5em;
       }
       #map-info .messages ul {
         padding-left: 15px;
       }
       #map-info #axles-form {
-        margin-top: 1em;
+        margin-top: .5em;
       }
       #map-info .toll {
-        margin-top: 1em;
+        margin-top: .85em;
+      }
+      #map-info .toll h3 {
+        margin-top: 0;
+        margin-bottom: .75em;
+        float: left;
+      }
+      #map-info .toll .fee {
+        margin-left: 7px;
+      }
+      #map-info .traffic {
+        clear: both;
       }
       #map .marker-label {
         background: rgba(255,255,255,.85);
         padding: 2px;
         border: 1px solid #444;
         font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+        white-space: nowrap;
         /*font-size: 15px;*/
       }
+      @media only screen and (max-width: 901px) {
+        #map-info .toll-et-al {
+          float: left;
+        }
+        #map-info .axles {
+          float: left;
+          margin-right: 3em;
+        }
+      }
+      @media only screen and (max-width: 601px) {
+        body {
+          width: 100%;
+        }
+        .page-title {
+          font-size: 21px;
+          line-height: 30px;
+        }
+        .info-title {
+          display: none;
+        }
+        #map-info .alert-info {
+          margin: 1em 0; 
+        }
+      }
     </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
   </head>
   <body>
-    <h1>Dulles Toll Road Calculator</h1>
+    <h1 class="page-title">Dulles Toll Road Calculator</h1>
     
     <!-- Container for map -->
     <div class="map" id="map"></div>
     
     <!-- Block for info display -->
     <div class="map-info" id="map-info">
-      <h4>Dulles Toll Road Calculator</h4>
-      <div class="start"><strong>Start</strong>: <span></span></div>
-      <div class="end"><strong>Exit</strong>: <span></span></div>
+      <h4 class="info-title">Dulles Toll Road Calculator</h4>
+      <div class="alert alert-info">
+        <div class="start"><label>Start:</label> <span class="point"></span></div>
+        <div class="end"><label>Exit:</label> <span class="point"></span></div>
+      </div>
       <div class="axles">
         <form id="axles-form">
           <div><label><input class="axle-check" type="checkbox" name="2axles" value="2" checked="checked"> 2 Axles</label></div>
@@ -63,13 +119,15 @@
           <div><label><input class="axle-check" type="checkbox" name="6axles" value="6"> 6+ Axles</label></div>
         </form>
       </div>
-      <div class="toll"><strong>Toll</strong>: <span></span></div>
-      <div class="traffic">
-        <form id="axles-form">
-          <div><label><input class="traffic-check" type="checkbox" name="traffic"> <span>Enable traffic</span></label></div>
-        </form>
+      <div class="toll-et-al">
+        <div class="toll"><h3>Toll:</h3><h3 class="fee"></h3></div>
+        <div class="traffic">
+          <form id="axles-form">
+            <div><label><input class="traffic-check" type="checkbox" name="traffic"> <span>Enable traffic</span></label></div>
+          </form>
+        </div>
+        <div class="messages alert alert-danger"></div>
       </div>
-      <div class="messages alert alert-danger"></div>
     </div>
     
     <script type="text/javascript">
@@ -109,7 +167,7 @@
             polylineOptions: {
               strokeColor: "#a61aad",
               strokeWeight: 8,
-              strokeOpacity: .75
+              strokeOpacity: .65
             },
             preserveViewport: true
           }); // (to ensure zoom is respected) preserveViewport: true
@@ -128,8 +186,46 @@
           });
           
           this.initCheckboxes();
+          this.initResize();
         },
         
+        
+        // Allow the map and info pane to be resized.
+        initResize: function() {
+          var winH      = 0;
+          var winHOrig  = $(window).height();
+          var $map      = $('#map');
+          var $info     = $('#map-info');
+          var winW      = 0;
+          var winWOrig  = $(window).width();
+          var mapWOrig  = $map.width(); 
+          var infoWOrig = $info.width();
+          var tollCalc = this;
+          
+          // Callback to resize the map and info window
+          var resize = function() {
+            winW = $(window).width();
+            winH = $(window).height();
+
+            if ((mapWOrig + infoWOrig) >= (winW - 50)) {
+              $map.css({'width': winW+'px', 'height': (winH / 1.5) + 'px'});
+              $info.css('width', winW+'px');
+            }
+            else {
+              $map.css({'width': '', 'height': ''});
+              $info.css({'width': '', 'height': ''});
+            }
+
+            google.maps.event.trigger(tollCalc.settings.map, "resize");
+            tollCalc.settings.map.setCenter(tollCalc.settings.center); 
+          };
+          
+          resize(); // call it once to intialize it.
+          $(window).resize(function() {
+            resize(); 
+          });
+        },
+          
         
         // Enable/disable traffic layer
         toggleTraffic: function(status) {
@@ -290,7 +386,7 @@
             }
             else if (elem === 'toll') {
               text = Number(text).toFixed(2);           // covert toll to decimal w 2 digits
-              $('#map-info .toll span').text('$'+text); // set toll in window
+              $('#map-info .toll h3.fee').text('$'+text); // set toll in window
             }
           }
         },
