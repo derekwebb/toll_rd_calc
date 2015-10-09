@@ -266,7 +266,8 @@
           axleSelect:  $('#map-info select.axles'), // Axles select box
           tollText:    $('#map-info .toll') // Text to display Toll fee
         },
-        
+
+
         initialize: function() {
           this.settings.center = new google.maps.LatLng(38.945898, -77.316963);
           this.settings.mapOptions = {
@@ -305,8 +306,8 @@
             tollCalc.initBtnReset();
           });
         },
-        
-        
+
+
         // Allow the map and info pane to be resized.
         initResize: function() {
           var winH      = 0;
@@ -342,8 +343,8 @@
             resize(); 
           });
         },
-          
-        
+
+
         // Enable/disable traffic layer
         toggleTraffic: function(status) {
           if (status) {
@@ -353,8 +354,8 @@
             this.settings.traffic.setMap(null);
           }
         },
-        
-     
+
+
         // Set up the route.
         calcRoute: function(reset) {
           var reset = (reset) ? reset : false;
@@ -362,28 +363,45 @@
           var start = this.settings.orig_start = new google.maps.LatLng(38.966176, -77.430888); // cont to Dulles Greenway
           var end   = this.settings.orig_end   = new google.maps.LatLng(38.931673, -77.212148); // cont. to 267
           
+          // NOTE: See NOTE directly below
+          //var lat = 'J';
+          //var lng = 'M';
+          
           // Get start position - mind the reset
           if (this.testPoint('start') && this.testPoint('end') && !reset) {
+            
+            // NOTE: This may not be safe. JS object are not required to 
+            //  have an order. As such the first could (in theory) be lat, and
+            //  the second be lng. If the maps starts going "boink"
+            //  we can use direct access of the positions, or perhaps 
+            //  find another way to set start and end points entirely.
+            var lat = Object.keys(this.settings.start.position)[0]; //'J';
+            var lng = Object.keys(this.settings.start.position)[1]; //'M';
+            //  For instance we could do this:
+            //if (this.settings.start.position.hasOwnProperty('H')) var lat = 'H';     
+            //if (this.settings.start.position.hasOwnProperty('L')) var lng = 'L';
+            
             if (this.settings.heading == 'east') { // east bound
               // The route maps fine this way :)
-              start = new google.maps.LatLng(this.settings.start.position.H, this.settings.start.position.L);
-              end   = new google.maps.LatLng(this.settings.end.position.H, this.settings.end.position.L);
+              start = new google.maps.LatLng(this.settings.start.position[lat], this.settings.start.position[lng]);
+              end   = new google.maps.LatLng(this.settings.end.position[lat], this.settings.end.position[lng]);
             }
             else { // west bound
               // When headed west, the directions need to be reversed to keep the route on the right path
               //  If and when we handle the east and west bound traffic differently (adding new route markers etc.) this 
               //  can be updated (and or removed)
-              end   = new google.maps.LatLng(this.settings.start.position.H, this.settings.start.position.L); // note the start is sent into end 
-              start = new google.maps.LatLng(this.settings.end.position.H, this.settings.end.position.L);     //  and vs. versus.
+              end   = new google.maps.LatLng(this.settings.start.position[lat], this.settings.start.position[lng]); // note the start is sent into end 
+              start = new google.maps.LatLng(this.settings.end.position[lat], this.settings.end.position[lng]);     //  and vs. versus.
             }
           }
+          // Build request object to send to google
           var request = {
             origin: start,
             destination: end,
             travelMode: google.maps.TravelMode.DRIVING
           };
-          var tollCalc = this;
 
+          var tollCalc = this;
           this.settings.directionsService.route(request, function(result, status) {
             if (status == google.maps.DirectionsStatus.OK) {
               tollCalc.settings.directionsDisplay.setDirections(result);
@@ -436,11 +454,11 @@
               msgs.push('No exit Westbound at '+end.labelContent);
             }
           }
-          
+
           if (this.settings.start.labelNo === this.settings.end.labelNo) {
             msgs.push('Cannot end route at starting point');
           }
-          
+
           if (msgs.length) {
             this.resetMap();
             this.settings.messages = msgs;
@@ -458,7 +476,7 @@
           if (!reset) { // don't reset
             var content = '';
             var wrapper = (this.settings.messages.length > 1) ? 'li' : 'div';
-            
+
             // Determine wrapper
             if (this.settings.messages.length > 1) {
               wrapper = 'li';
@@ -467,12 +485,12 @@
             else {
               wrapper = 'div';
             }
-            
+
             // Add messages to the content
             for (var i in this.settings.messages) {
               content += '<'+wrapper+' class="message">'+this.settings.messages[i]+'</'+wrapper+'>';
             }
-            
+
             if (this.settings.messages.length > 1) content += '</ul>'; // close the ul
             this.settings.messageCont.html(content).show(); // add messages to screen and show them
           }
@@ -485,12 +503,12 @@
         // Set a point for the route
         setPoint: function(pos, marker) {
           marker = this.settings.markers[marker];
-          
+
           if (!this.testPoint('start') && !this.testPoint('end')) {
             this.resetMarkers();
             this.updateMessages(true);   
           }
-          
+
           // Set start point
           if (pos == 'start') {
             if (!this.testPoint('end')) this.resetMarkers(); // are they updating the start point
@@ -504,7 +522,7 @@
               this.selectMarker(this.settings.end);  // Update label
             }
           }
-          
+
           // Set end point
           else {
             if (!this.testPoint('start')) this.resetMarkers(); // are they updating the end point
@@ -518,7 +536,7 @@
               this.selectMarker(this.settings.start);  // Update label
             }
           }
-          
+
           if (this.testPoint('start') && this.testPoint('end')) {
             if (this.verifyRoute()) { // Does the route make sense?
               this.calcRoute();          // calculate new route path
@@ -530,7 +548,7 @@
           this.settings.infoWindows[marker.labelID].close();
         },
 
-        
+
         // Saves the route for later use and clears the current route
         saveRoute: function() {
           this.settings.lastStart = this.settings.start;
@@ -538,8 +556,8 @@
           this.settings.start     = {};
           this.settings.end       = {};  
         },
-        
-        
+
+
         // Initialize the info windows with route declaration buttons
         initInfoWindows: function() {
           //console.log(this.settings.markers);
@@ -624,7 +642,7 @@
           var startNo = this.settings.lastStart.labelNo; // The users entry point
           var endNo   = this.settings.lastEnd.labelNo;   // The point that they are exiting at
           var toll    = 0;                           // cumulative toll fee
-          
+
           // here we use the # of axles to select price from tollMap
           var axles = Number(this.settings.axleSelect.find('option:selected').val()) - 2; 
 
@@ -635,7 +653,7 @@
           if ((startNo >= 3 && endNo < 3) || (startNo <= 2 && endNo > 2)) {
             toll += tollMap['main'][axles];
           }
-          
+
           // Heading --East--
           if (heading == 'east') {
             // Entry points w/out tolls
@@ -646,7 +664,7 @@
               toll += tollMap[endNo][axles];
             }
           }
-          
+
           // Heading --West--
           if (heading == 'west') {
             // Entry points w/out tolls
@@ -657,12 +675,12 @@
               toll += tollMap[endNo][axles];
             }
           }
-          
+
           toll = Number(toll).toFixed(2);             // covert toll to decimal w 2 digits
           this.settings.tollText.html('<span>$'+toll+'</span>');      // set toll in window
         },
-        
-        
+
+
         // Get toll mapping according to # axles
         //  Maps to axle count (2, 3, 4, 5, 6) fee
         //  tollMap obj Keyed by settings.(start/end point).LabelNo
@@ -899,8 +917,8 @@
             }
           });
         },
-        
-        
+
+
         // Set up change events for the select boxes
         initSelectBoxes: function() {
           var tollCalc = this;
