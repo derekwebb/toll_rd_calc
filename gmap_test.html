@@ -56,9 +56,16 @@
       #map-info #axles-form {
         margin-top: .5em;
       }
-      #map-info .traffic {
+      #map-info .traffic,
+      #map-info .mapshow {
         float: right;
-        margin-top: -4px;
+        position: relative;
+        top: -2px;
+        margin-left: 8px;
+      }
+      #map-info .btn-primary .fm,
+      #map-info .mapshow {
+        display: none;
       }
       #map-info .toll {
         margin: 0;
@@ -72,9 +79,6 @@
         margin: 0;
         color: white;
         font-weight: bold;
-      }
-      #map-info .traffic {
-        clear: both;
       }
       #map-info .sel {
         width: 100%;
@@ -144,7 +148,7 @@
         }
         #map-info .messages {
           margin-bottom: 0;
-          margin-top: .25em;
+          margin-top: 0;
           margin-left: 1em;
         }
       }
@@ -153,11 +157,12 @@
           width: 100%;
         }
         #map,
-        #map-info .traffic {
+        #map-info .traffic,
+        #map-info .btn-reset .mp {
           display: none;
         }
-        #map-info .messages {
-          margin-left: 0;
+        #map-info .mapshow {
+          display: block;
         }
         .page-title {
           font-size: 21px;
@@ -169,6 +174,20 @@
         #map-info .alert-info {
           margin: 1em 0; 
         }
+      }
+      @media only screen and (max-width: 500px) {
+        #map-info .toll-et-al {
+          float: none;
+          clear: both;
+        }
+        #map-info .messages {
+          margin-bottom: 0;
+          margin-top: .5em;
+          margin-left: 0;
+        }
+      }
+      @media only screen and (max-width: 350px) {
+        
       }
     </style>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -182,9 +201,15 @@
     <!-- Block for info display -->
     <div class="map-info clearfix" id="map-info">
       <h4 class="info-title">Dulles Toll Road Calculator</h4>
-      <label class="traffic"><input class="traffic-check" type="checkbox" name="traffic"> <span>Enable traffic</span></label>
       <div class="exits">
-        <h5>Start</h5>
+        <h5>Start
+          <label class="traffic">
+            <input class="traffic-check" type="checkbox" name="traffic"> <span>Enable traffic</span>
+          </label>
+          <label class="mapshow">
+            <input class="mapshow-check" type="checkbox" name="showmap"> <span>Show map</span>
+          </label>  
+        </h5>
         <div class="sel">
           <select class="start">
             <option value="start">Select</option>
@@ -233,10 +258,10 @@
           </select>
         </div>
       </div>
-      <div class="reset-cont"><button class="btn btn-primary btn-reset">Reset map</button></div>
+      <div class="reset-cont"><button class="btn btn-primary btn-reset">Reset <span class="mp">map</span><span class="fm">form</span></button></div>
       <div class="toll-et-al">
         <h3 class="toll"></h3>
-        <div class="messages alert alert-danger">
+        <div class="messages alert alert-danger"></div>
       </div>
     </div>
     
@@ -278,20 +303,8 @@
           };
           this.settings.map = new google.maps.Map(document.getElementById("map"), this.settings.mapOptions);
           this.settings.directionsService = new google.maps.DirectionsService;
-          this.settings.directionsDisplay = new google.maps.DirectionsRenderer({
-            map: this.settings.map, 
-            suppressMarkers: true, 
-            polylineOptions: {
-              strokeColor: "#a61aad",
-              strokeWeight: 8,
-              strokeOpacity: .65
-            },
-            preserveViewport: true
-          }); // (to ensure zoom is respected) preserveViewport: true
-          
-          this.settings.directionsDisplay.setMap(this.settings.map);
-          this.settings.traffic = new google.maps.TrafficLayer(), // traffic layer
-          this.calcRoute(); // calculate default route
+          this.setDirectionsDisplay(.75); // set the Directions display at 75% opacity
+          this.settings.traffic = new google.maps.TrafficLayer(); // traffic layer
 
           // Load markerwithlabels.js file
           // This script needs to load after google has been initialized
@@ -348,52 +361,66 @@
         // Enable/disable traffic layer
         toggleTraffic: function(status) {
           if (status) {
+            this.setDirectionsDisplay(.4);
             this.settings.traffic.setMap(this.settings.map);
           }
           else {
+            this.setDirectionsDisplay(.75);
             this.settings.traffic.setMap(null);
           }
         },
 
 
+        // Reset or initialise the directionsDisplay renderer
+        setDirectionsDisplay: function(opacity) {
+          if (this.settings.directionsDisplay.hasOwnProperty('directions')) {
+            this.settings.directionsDisplay.setMap(null);
+          }
+          this.settings.directionsDisplay = new google.maps.DirectionsRenderer({
+            map: this.settings.map, 
+            suppressMarkers: true, 
+            polylineOptions: {
+              strokeColor: "#a61aad",
+              strokeWeight: 8,
+              strokeOpacity: opacity
+            },
+            preserveViewport: true
+          }); // (to ensure zoom is respected) preserveViewport: true
+
+          this.settings.directionsDisplay.setMap(this.settings.map);
+          this.calcRoute(false, true); // calculate the current route
+        },
+
+
         // Set up the route.
-        calcRoute: function(reset) {
-          var reset = (reset) ? reset : false;
+        calcRoute: function(reset, last) {
+          var reset = (reset) ? true : false;
+          var last  = (last)  ? true : false;
+          
           // Start at the west side
           var start = this.settings.orig_start = new google.maps.LatLng(38.966176, -77.430888); // cont to Dulles Greenway
           var end   = this.settings.orig_end   = new google.maps.LatLng(38.931673, -77.212148); // cont. to 267
           
-          // NOTE: See NOTE directly below
-          //var lat = 'J';
-          //var lng = 'M';
+          // If last is true, we are loading the route of the last request (re-creating it)
+          var posStart = (!last) ? this.settings.start : this.settings.lastStart;
+          var posEnd   = (!last) ? this.settings.end   : this.settings.lastEnd;
           
           // Get start position - mind the reset
-          if (this.testPoint('start') && this.testPoint('end') && !reset) {
-            
-            // NOTE: This may not be safe. JS object are not required to 
-            //  have an order. As such the first could (in theory) be lat, and
-            //  the second be lng. If the maps starts going "boink"
-            //  we can use direct access of the positions, or perhaps 
-            //  find another way to set start and end points entirely.
-            var lat = Object.keys(this.settings.start.position)[0]; //'J';
-            var lng = Object.keys(this.settings.start.position)[1]; //'M';
-            //  For instance we could do this:
-            //if (this.settings.start.position.hasOwnProperty('H')) var lat = 'H';     
-            //if (this.settings.start.position.hasOwnProperty('L')) var lng = 'L';
-            
+          if (this.testPoint('start', last) && this.testPoint('end', last) && !reset) {
             if (this.settings.heading == 'east') { // east bound
               // The route maps fine this way :)
-              start = new google.maps.LatLng(this.settings.start.position[lat], this.settings.start.position[lng]);
-              end   = new google.maps.LatLng(this.settings.end.position[lat], this.settings.end.position[lng]);
+              start = new google.maps.LatLng(posStart.getPosition().lat(), posStart.getPosition().lng());
+              end   = new google.maps.LatLng(posEnd.getPosition().lat(), posEnd.getPosition().lng());
             }
             else { // west bound
               // When headed west, the directions need to be reversed to keep the route on the right path
               //  If and when we handle the east and west bound traffic differently (adding new route markers etc.) this 
               //  can be updated (and or removed)
-              end   = new google.maps.LatLng(this.settings.start.position[lat], this.settings.start.position[lng]); // note the start is sent into end 
-              start = new google.maps.LatLng(this.settings.end.position[lat], this.settings.end.position[lng]);     //  and vs. versus.
+              end   = new google.maps.LatLng(posStart.getPosition().lat(), posStart.getPosition().lng()); // note the start is sent into end 
+              start = new google.maps.LatLng(posEnd.getPosition().lat(), posEnd.getPosition().lng());     //  and vs. versus.
             }
           }
+
           // Build request object to send to google
           var request = {
             origin: start,
@@ -769,7 +796,7 @@
               labelContent: 'Interstate 267',
               labelClass: "marker-label bot lbl-start",
               labelInForeground: true,
-              labelAnchor: new google.maps.Point(56, -15),
+              labelAnchor: new google.maps.Point(40, -15),
           });
           markers['spring_hill'] = new MarkerWithLabel({ // Spring hill rd exit
               position: new google.maps.LatLng(38.933476, -77.233097),
@@ -896,7 +923,7 @@
               labelContent: 'Dulles Greenway',
               labelClass: "marker-label top lbl-end",
               labelInForeground: true,
-              labelAnchor: new google.maps.Point(88, 33)
+              labelAnchor: new google.maps.Point(50, 33)
           });
           
           this.settings.markers = markers;
@@ -914,6 +941,24 @@
             }
             else {
               $(this).parent('label').find('span').text('Enable traffic');
+            }
+          });
+          
+          // User clicks the show map checkbox
+          $('.mapshow-check').click(function() {
+            if ($(this).prop("checked")) {
+              $('#map, #map-info .traffic').css('display', 'block');
+              $('#map-info .btn-reset .fm').hide(); // hide form text
+              $('#map-info .btn-reset .mp').show(); // show map text
+
+              // Resize and recenter the map since it is now visible to the user
+              google.maps.event.trigger(tollCalc.settings.map, 'resize');
+              tollCalc.settings.map.setCenter(tollCalc.settings.center);
+            }
+            else {
+              $('#map, #map-info .traffic').css('display', 'none');
+              $('#map-info .btn-reset .fm').show(); // show form text
+              $('#map-info .btn-reset .mp').hide(); // hide map text
             }
           });
         },
@@ -965,6 +1010,9 @@
           this.settings.end       = {};
           this.settings.lastStart = {};
           this.settings.lastEnd   = {};
+          
+          // Recenter the map
+          this.settings.map.setCenter(this.settings.center);
         },
 
 
