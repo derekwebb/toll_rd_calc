@@ -299,7 +299,7 @@
             center: this.settings.center,
             zoom: 12,
             minZoom: 12,
-            maxZoom: 14
+            maxZoom: 15
           };
           this.settings.map = new google.maps.Map(document.getElementById("map"), this.settings.mapOptions);
           this.settings.directionsService = new google.maps.DirectionsService;
@@ -600,7 +600,7 @@
                               <h5>Main Line Toll Plaza</h5>\
                               <p>Main Line Toll Plaza is not an exit.</p>';
           for (var i in markers) {
-            if (markers[i].labelID != 'markerMain') {
+            if (markers[i].labelID != 'marker_main') {
               this.settings.infoWindows[markers[i].labelID] = new google.maps.InfoWindow({
                 content: exitMarkup(markers[i].labelID)
               });
@@ -648,15 +648,29 @@
 
             // Handle hover of marker
             google.maps.event.addListener(markers[i], 'mouseover', function() {
-              if (this.labelID != 'markerMain') { // no effects
-                this.setIcon(markerImgs['hover']);
+              if (this.labelID === 'dulles_greenway') {
+                this.setIcon(markerImgs['left_hover']);
+              }
+              else if (this.labelID === 'i267') {
+                this.setIcon(markerImgs['right_hover']);
+              }
+              else {
+                if (this.labelID != 'marker_main') {
+                  this.setIcon(markerImgs['hover']);
+                } 
               }
             });
             google.maps.event.addListener(markers[i], 'mouseout', function() {
               // Don't reset main toll plaza marker, or any marker that is selected as part
               //  of the user's expected route
-              if (this.labelID != 'markerMain' && (this.labelClass.search('selected') < 0)) {
+              if (this.labelID != 'marker_main' && (this.labelClass.search('selected') < 0)) {
                 this.setIcon(markerImgs['default']);
+              }
+              if (this.labelID == 'dulles_greenway' && (this.labelClass.search('selected') < 0)) {
+                this.setIcon(markerImgs['left']);
+              }
+              if (this.labelID == 'i267' && (this.labelClass.search('selected') < 0)) {
+                this.setIcon(markerImgs['right']);
               }
             });
           }
@@ -736,7 +750,15 @@
         selectMarker: function(marker) {
           var markerImgs = this.getMarkerImgs();
           marker.set('labelClass', marker.labelClass+' selected');
-          marker.setIcon(markerImgs['hover']);
+          if (marker.labelID === 'dulles_greenway') {
+            marker.setIcon(markerImgs['left_hover']);
+          }
+          else if (marker.labelID === 'i267') {
+            marker.setIcon(markerImgs['right_hover']);
+          }
+          else {
+            marker.setIcon(markerImgs['hover']);
+          }
         },
 
 
@@ -744,11 +766,22 @@
         resetMarkers: function() {
           var markerImgs = this.getMarkerImgs();
           for (var i in this.settings.markers) {
-            if (this.settings.markers[i].labelID != 'markerMain') {
+            if (this.settings.markers[i].labelID != 'marker_main') {
+              // remove selected class
               if (this.settings.markers[i].labelClass.search('selected') > 0) {
                 this.settings.markers[i].set('labelClass', this.settings.markers[i].labelClass.slice(0, -9));
               }
-              this.settings.markers[i].setIcon(markerImgs['default']);
+              
+              // Reset markers
+              if (this.settings.markers[i].labelID === 'dulles_greenway') {
+                this.settings.markers[i].setIcon(markerImgs['left']);
+              }
+              else if (this.settings.markers[i].labelID === 'i267') {
+                this.settings.markers[i].setIcon(markerImgs['right']);
+              }
+              else {
+                this.settings.markers[i].setIcon(markerImgs['default']);
+              }       
             }
           }
           this.calcRoute(true); // Passing true resets the route (full length route line appears)
@@ -776,6 +809,30 @@
             origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
             anchor: new google.maps.Point(10, 10) // The anchor for this image is the center the image.
           };
+          markerImgs['left'] = {
+            url: 'arrow-left.png',
+            size: new google.maps.Size(35, 25),   // This marker is 20 pixels wide by 20 pixels high.
+            origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
+            anchor: new google.maps.Point(15, 12) // The anchor for this image is the center the image.
+          };
+          markerImgs['right'] = {
+            url: 'arrow-right.png',
+            size: new google.maps.Size(35, 25),   // This marker is 20 pixels wide by 20 pixels high.
+            origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
+            anchor: new google.maps.Point(15, 12) // The anchor for this image is the center the image.
+          };
+          markerImgs['left_hover'] = {
+            url: 'arrow-left-hover.png',
+            size: new google.maps.Size(35, 25),   // This marker is 20 pixels wide by 20 pixels high.
+            origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
+            anchor: new google.maps.Point(15, 12) // The anchor for this image is the center the image.
+          };
+          markerImgs['right_hover'] = {
+            url: 'arrow-right-hover.png',
+            size: new google.maps.Size(35, 25),   // This marker is 20 pixels wide by 20 pixels high.
+            origin: new google.maps.Point(0, 0),  // The origin for this image is (0, 0).
+            anchor: new google.maps.Point(15, 12) // The anchor for this image is the center the image.
+          };
           return markerImgs;
         },
 
@@ -790,7 +847,7 @@
           markers['i267'] = new MarkerWithLabel({ // Start
               position: new google.maps.LatLng(38.931673, -77.212148),
               map: this.settings.map,
-              icon: images['default'],
+              icon: images['right'],
               labelNo: 1,
               labelID: 'i267',
               labelContent: 'Interstate 267',
@@ -809,11 +866,11 @@
               labelInForeground: true,
               labelAnchor: new google.maps.Point(37, 33),
           });
-          markers['markerMain'] = new MarkerWithLabel({ // Main toll plaza
+          markers['marker_main'] = new MarkerWithLabel({ // Main toll plaza
               position: new google.maps.LatLng(38.934199, -77.238835),
               map: this.settings.map,
               icon: images['main'],
-              labelID: 'markerMain'
+              labelID: 'marker_main'
           });
           markers['leesburg_pike'] = new MarkerWithLabel({ // Leesburg Pike exit
               position: new google.maps.LatLng(38.933952, -77.246473),
@@ -917,7 +974,7 @@
           markers['dulles_greenway'] = new MarkerWithLabel({ // On to Dulles Greenway
               position: new google.maps.LatLng(38.966176, -77.430888),
               map: this.settings.map,
-              icon: images['default'],
+              icon: images['left'],
               labelNo: 12,
               labelID: 'dulles_greenway',
               labelContent: 'Dulles Greenway',
